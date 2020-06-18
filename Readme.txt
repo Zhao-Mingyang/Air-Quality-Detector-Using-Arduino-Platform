@@ -1,1 +1,3 @@
 //this project uses external libraries DS1302, MsTimer2 and U8glib
+
+PM2.5, PM10 and HCHO data which are read from sensor and shown on the LCD screen. The date and time information are also shown. The system records air quality data and time information in the ROM periodically. To read the data stored in the EEPROM, two buttons are used. Button1 is used for the system to go into the mode which read the historical data and show it on the screen. While, when button2 is pressed, the system quit mode used to read the historical data and show the real time data. By pressing this two buttons, the readings needed could be shown on the LED screen.
