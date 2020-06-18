@@ -1,0 +1,476 @@
+#include <EEPROM.h>           //ROM Read Write Libraray
+#include <U8glib.h>           //12864 display library
+#include <DS1302.h>           //Clock chip library
+#include <MsTimer2.h>         //Interrupt library
+#include <SoftwareSerial.h>   //Software Serial for sensor
+
+#define RTCCE 8 //DS1302 CE PIN
+#define RTCIO 6 //DS1302 IO PIN
+#define RTCSCLK 7 //DS1302 CLK PIN
+#define HCHORx 10 //DART sensor Rx pin
+#define HCHOTx 9  //DART sensor Tx pin
+#define BUTTON1 2 //set button1 to 2 because this pin is interrupt
+#define BUTTON2 3 //set button2 to 3 because this pin is interrupt
+
+U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_NONE); //u8g is the display
+DS1302 rtc(RTCCE, RTCIO, RTCSCLK);  //rtc is DS1302
+SoftwareSerial mySerial(HCHORx, HCHOTx);  //myserial for DART sensor
+
+const long INTERVAL = 1000;  //The time interval of sensor read
+int HCHO = 0; //HCHO value
+uint8_t HCHOH = 0;  //HCHO high 8 bit from sensor
+uint8_t HCHOH_old = 0;  //HCHO high 8 bit from ROM
+uint8_t HCHOL = 0;  //HCHO low 8 bit from sensor
+uint8_t HCHOL_old = 0;  //HCHO low 8 bit from ROM
+int PM2D5 = 0;  //PM2D5 value
+uint8_t PM2D5H = 0; //PM2D5 high 8 bit from ROM
+uint8_t PM2D5H_old = 0;
+uint8_t PM2D5L = 0;
+uint8_t PM2D5L_old = 0;
+int PM10 = 0;
+uint8_t PM10H = 0;
+uint8_t PM10H_old = 0;
+uint8_t PM10L = 0;
+uint8_t PM10L_old = 0;
+int addrhead= 0; //The oldest addr of ROM data
+int addrtile= 0; //The newest addr of ROM data
+int addrread= 0; //The addr we are reading
+int state = 0; //0:ShowTime; 1:ReadPM; 2:ReadHCHO; 3:DATA to EEPROM
+// int state2 = 0;
+Time t;
+Time t_old;
+
+void PM7003Read()
+{
+  uint8_t ReadData = 0;  // Data read from serial
+  uint8_t DataPackage[32] = {0};  //Data stack of PMS7003 output
+  uint8_t i = 0;
+  int SumCheck = 0;
+  while (Serial.available() > 0)
+    {
+      ReadData = Serial.read();
+      delay(1);
+      if (ReadData == 0x42)  // Check if it is head 1
+        {
+          DataPackage[0] = ReadData;
+          ReadData = Serial.read();
+          if(ReadData == 0x4d)  // Check if it is head 2
+          {
+            DataPackage[1] == ReadData;
+            SumCheck = 66+77; // Add head1 and head2 to Sum
+            for(int i=2; i< 30; i++)
+            {
+              DataPackage[i] = Serial.read();
+              delay(2);
+              SumCheck = SumCheck+DataPackage[i];
+            }
+            DataPackage[30] = Serial.read();
+            delay(1);
+            DataPackage[31] = Serial.read();
+            if(SumCheck == DataPackage[30]*256+DataPackage[31]) //SumCheck OK
+            {
+              PM2D5H = DataPackage[12];
+              PM2D5L = DataPackage[13];
+              PM2D5 = DataPackage[12]*256+DataPackage[13];
+              PM10H = DataPackage[14];
+              PM10L = DataPackage[15];
+              PM10 = DataPackage[14]*256+DataPackage[15];
+//              Serial.print("OK ");
+             //Serial.print("PM2D5");
+            // Serial.print(PM2D5);
+              return;
+            }
+          }
+          
+        }
+      
+    }
+}
+
+void ReadHCHO()
+{
+  uint8_t ReadData = 0;  // Data read from myserial
+  uint8_t DataPackage[15] = {0};  //Data stack of HCHO sensor output
+  int i = 0;
+  uint8_t SumCheck = 0;
+  while (mySerial.available() > 0 )
+    {
+      if (mySerial.read() == 0xAA)  // Check if it is head
+      {
+        for(int i=1; i< 14; i++)
+        {
+          DataPackage[i] = mySerial.read();
+        }
+        SumCheck = ~(DataPackage[1]+DataPackage[2])+1;
+        if(SumCheck == DataPackage[3]) //DataPackage[13] == 0x0D && DataPackage[14] == 0x0A) //SumCheck OK
+        {
+          HCHO = DataPackage[1]*256+DataPackage[2];
+//          Serial.println("OK ");
+//          Serial.print("2=");
+//          Serial.println(DataPackage[1],HEX);
+//          Serial.print("3=");
+//          Serial.println(DataPackage[2],HEX);
+//          Serial.println(DataPackage[3],HEX);
+//          Serial.println(SumCheck,HEX);
+//          Serial.println(HCHO);
+//          Serial.print("4=");
+//          Serial.println(DataPackage[3],HEX);
+//          Serial.print("5=");
+//          Serial.println(DataPackage[4],HEX);
+//          Serial.print("6=");
+//          Serial.println(DataPackage[5],HEX);
+//          Serial.print("7=");
+//          Serial.println(DataPackage[6],HEX);
+//          Serial.print("8=");
+//          Serial.println(DataPackage[7],HEX);
+//          Serial.print("9=");
+//          Serial.println(DataPackage[8],HEX);
+//          Serial.print("10=");
+//          Serial.println(DataPackage[9],HEX);
+//         Serial.print("11=");
+//          Serial.println(DataPackage[10],HEX);
+//          Serial.print("12=");
+//          Serial.println(DataPackage[11],HEX);
+//          Serial.print("13=");
+//          Serial.println(DataPackage[12],HEX);
+//          Serial.print("14=");
+//          Serial.println(DataPackage[13],HEX);
+//          Serial.print("15=");
+//          Serial.println(DataPackage[14],HEX);
+          return;
+       }
+      }
+    }
+}
+
+char* mgugconvertor(int ugdata)
+{
+    char *HCHOmg = "0.000";
+    HCHOmg[4] = HCHO%10+48;
+    HCHOmg[3] = HCHO/10%10+48;
+    HCHOmg[2] = HCHO/100%10+48;
+    HCHOmg[0] = HCHO/1000%10+48;
+    return HCHOmg;
+}
+
+char* ConvertTimeStr(int hr, int mi, int sc )
+{
+    char *TimeStr = "00:00:00";
+    if (hr < 10)
+      TimeStr[0] = 48;
+    else
+      TimeStr[0] = hr/10+48;
+      TimeStr[1] = hr%10+48;
+    if (mi < 10)
+      TimeStr[3] = 48;
+    else
+      TimeStr[3] = mi/10+48;
+      TimeStr[4] = mi%10+48;
+    if (sc < 10)
+      TimeStr[6] = 48;
+    else
+      TimeStr[6] = sc/10+48;
+      TimeStr[7] = sc%10+48;
+    return TimeStr;
+}
+
+char* ConvertDateStr(int dy, int mt, int yr )
+{
+    char *DateStr = "00:00:00";
+    if (dy < 10)
+      DateStr[0] = 48;
+    else
+    {
+      DateStr[0] = dy/10+48;
+      DateStr[1] = dy%10+48;
+    }
+    if (mt < 10)
+      DateStr[3] = 48;
+    else
+    {
+      DateStr[3] = mt/10+48;
+      DateStr[4] = mt%10+48;
+    }
+    if (yr < 10)
+      DateStr[6] = 48;
+    else
+    {
+      DateStr[6] = yr/10+48;
+      DateStr[7] = yr%10+48;
+    }
+    return DateStr;
+}
+
+void ReadSensor()
+{
+    ReadHCHO();
+    PM7003Read();
+    StoreData();
+    Serial.println(PM10);
+    Serial.print(PM2D5);
+    Serial.print(HCHO);
+}
+
+void ShowInfo()
+{
+  u8g.setFont(u8g_font_unifont);
+  u8g.drawStr(0, 10, rtc.getTimeStr());
+  u8g.drawStr(0, 23, rtc.getDateStr(FORMAT_SHORT));
+  u8g.drawStr(0, 36, "HCHO =     mg/m3");
+  u8g.drawStr(0, 49, "PM2.5=     mg/m3");
+  u8g.drawStr(0, 63, "PM10 =     mg/m3");
+  u8g.drawStr(48, 36, mgugconvertor(HCHO));
+//  u8g.setPrintPos(48, 36);
+//  u8g.print(HCHO);
+  u8g.setPrintPos(48, 49);
+  u8g.print(PM2D5);
+  u8g.setPrintPos(48, 63);
+  u8g.print(PM10);
+}
+
+void StoreData()
+{
+  t = rtc.getTime();
+  if (addrtile > addrhead)
+  {
+    EEPROM.update(addrhead, HCHOL);
+    EEPROM.update(addrhead+1, HCHOH);
+    EEPROM.update(addrhead+2, PM10L);
+    EEPROM.update(addrhead+3, PM10H);
+    EEPROM.update(addrhead+4, PM2D5L);
+    EEPROM.update(addrhead+5, PM2D5H);
+    EEPROM.update(addrhead+6, t.sec);
+    EEPROM.update(addrhead+7, t.min);
+    EEPROM.update(addrhead+8, t.hour);
+    EEPROM.update(addrhead+9, t.date);
+    EEPROM.update(addrhead+10, t.mon);
+    EEPROM.update(addrhead+11, t.year-2000);
+    if (addrtile < 1008)
+    {
+      addrtile = addrtile + 12;
+    }
+    else
+    {
+      addrtile = 0;
+    }
+    addrhead = addrhead + 12;
+  }
+  else if (addrhead == 0 && addrtile == 0)
+  {
+    EEPROM.update(addrhead, HCHOL);
+    EEPROM.update(addrhead+1, HCHOH);
+    EEPROM.update(addrhead+2, PM10L);
+    EEPROM.update(addrhead+3, PM10H);
+    EEPROM.update(addrhead+4, PM2D5L);
+    EEPROM.update(addrhead+5, PM2D5H);
+    EEPROM.update(addrhead+6, t.sec);
+    EEPROM.update(addrhead+7, t.min);
+    EEPROM.update(addrhead+8, t.hour);
+    EEPROM.update(addrhead+9, t.date);
+    EEPROM.update(addrhead+10, t.mon);
+    EEPROM.update(addrhead+11, t.year-2000);
+    addrhead = 12;
+  }
+  else if (addrtile == 0 && addrhead == 1008)
+  {
+    EEPROM.update(addrhead, HCHOL);
+    EEPROM.update(addrhead+1, HCHOH);
+    EEPROM.update(addrhead+2, PM10L);
+    EEPROM.update(addrhead+3, PM10H);
+    EEPROM.update(addrhead+4, PM2D5L);
+    EEPROM.update(addrhead+5, PM2D5H);
+    EEPROM.update(addrhead+6, t.sec);
+    EEPROM.update(addrhead+7, t.min);
+    EEPROM.update(addrhead+8, t.hour);
+    EEPROM.update(addrhead+9, t.date);
+    EEPROM.update(addrhead+10, t.mon);
+    EEPROM.update(addrhead+11, t.year-2000);
+    addrhead = 0;
+    addrtile = 12;
+  }
+  else if (addrhead > addrtile)
+  {
+    EEPROM.update(addrhead, HCHOL);
+    EEPROM.update(addrhead+1, HCHOH);
+    EEPROM.update(addrhead+2, PM10L);
+    EEPROM.update(addrhead+3, PM10H);
+    EEPROM.update(addrhead+4, PM2D5L);
+    EEPROM.update(addrhead+5, PM2D5H);
+    EEPROM.update(addrhead+6, t.sec);
+    EEPROM.update(addrhead+7, t.min);
+    EEPROM.update(addrhead+8, t.hour);
+    EEPROM.update(addrhead+9, t.date);
+    EEPROM.update(addrhead+10, t.mon);
+    EEPROM.update(addrhead+11, t.year-2000);
+    addrhead = addrhead + 12;
+  }
+  else
+  {
+    Serial.println("error");
+  }
+  EEPROM.update(1020, addrhead);
+  EEPROM.update(1021, addrtile);
+}
+
+void ReadRomData()
+{
+  t_old.year = EEPROM.read(addrread);
+  t_old.mon = EEPROM.read(addrread-1);
+  t_old.date = EEPROM.read(addrread-2);
+  t_old.hour = EEPROM.read(addrread-3);
+  t_old.min = EEPROM.read(addrread-4);
+  t_old.sec = EEPROM.read(addrread-5);
+  PM2D5H_old = EEPROM.read(addrread-6);
+  PM2D5L_old = EEPROM.read(addrread-7);
+  PM10H_old = EEPROM.read(addrread-8);
+  PM10L_old = EEPROM.read(addrread-9);
+  HCHOH_old = EEPROM.read(addrread-10);
+  HCHOL_old = EEPROM.read(addrread-11);
+ /* Serial.print("t_old.year=");
+  Serial.println(t_old.year);
+  Serial.print("t_old.mon=");
+  Serial.println(t_old.mon);
+  Serial.print("t_old.date=");
+  Serial.println(t_old.date);
+  Serial.print("t_old.hour=");
+  Serial.println(t_old.hour);
+  Serial.print("t_old.min=");
+  Serial.println(t_old.min);
+  Serial.print("t_old.sec=");
+  Serial.println(t_old.sec);
+  Serial.print("HCHOL_old=");
+  Serial.println(HCHOL_old);*/
+  if (addrread != addrtile+11)
+  {
+    if (addrread > 11)
+    {
+      addrread = addrread-12;
+    }
+    else
+    {
+      addrread = addrread+1020-12;
+    }
+  }
+  else
+  {
+    addrread = addrhead -1;
+  }
+}
+
+void ShowRomData()
+{
+//  ReadRomData();
+  u8g.setFont(u8g_font_unifont);
+  u8g.drawStr(0, 10, ConvertTimeStr(t_old.hour, t_old.min, t_old.sec));
+  u8g.drawStr(0, 23, ConvertDateStr(t_old.date, t_old.mon, t_old.year));
+  u8g.drawStr(0, 36, "HCHO =     mg/m3");
+  u8g.drawStr(0, 49, "PM2.5=     mg/m3");
+  u8g.drawStr(0, 63, "PM10 =     mg/m3");
+  u8g.drawStr(48, 36, mgugconvertor(HCHOH_old*256+HCHOL_old));
+//  u8g.setPrintPos(48, 36);
+//  u8g.print(HCHO);
+  u8g.setPrintPos(48, 49);
+  u8g.print(PM2D5H_old*256+PM2D5L_old);
+  u8g.setPrintPos(48, 63);
+  u8g.print(PM10H_old*256+PM10L_old);
+}
+
+void setupD1302()
+{
+  rtc.halt(true);
+  rtc.writeProtect(false);
+  //rtc.setDOW(FRIDAY);
+ // rtc.setTime(16,25,0);  //Set to 12.00.00
+  //tc.setDate(20,10,2017);
+  rtc.setTCR(92);
+  Serial.begin(9600);
+  rtc.halt(false);
+  rtc.writeProtect(true);
+}
+
+void setup() {
+  // put your setup code here, to run once:
+ u8g.firstPage();
+  do{
+ u8g.setFont(u8g_font_unifont);
+  u8g.drawStr(5, 10, "Dulwich");
+  u8g.drawStr(1, 23, "International");
+  u8g.drawStr(1, 36, "High School SZ"); 
+  u8g.drawStr(0, 49, "Extended Project");
+  u8g.drawStr(0, 63, "Darren zhao");
+}
+while(u8g.nextPage());
+delay(5000);
+  Serial.begin(9600);
+  mySerial.begin(19200);
+  MsTimer2::set(INTERVAL, ReadSensor);
+  MsTimer2::start();
+  setupD1302();
+  addrhead= EEPROM.read(1020); //The newest  addr of ROM data
+  addrtile= EEPROM.read(1021); //The oldest addr of ROM data
+  addrread = addrhead - 1;
+  Serial.print(addrread);
+  Serial.println("PM10,PM2.5,HCHO");
+  pinMode(BUTTON1, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON1), GoToReadMode, FALLING);
+  pinMode(BUTTON2, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON2), ReturnToNormalMode, FALLING);
+}
+
+void GoToReadMode()
+{
+  if (state = 0)
+  {
+    if (addrhead != 0)
+    {
+      addrread = addrhead -1;
+      state = 1;
+      ReadRomData();
+    }
+    else
+    {
+      if (addrtile != 0)
+      {
+        addrread = 1019;
+        state = 1;
+        ReadRomData();
+      }
+      else
+      {
+        Serial.print("No Data");
+      }
+    }
+  }
+  else if (state = 1)
+  {
+    ReadRomData();
+  }
+}
+
+void ReturnToNormalMode()
+{
+  state = 0;
+  addrread = addrhead-1;
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+    u8g.firstPage();
+  do {
+//    ReadSensor();
+    switch(state)
+    {
+      case 0:
+        ShowInfo();
+        break;
+      case 1:
+        ShowRomData();
+        break;
+      default:
+        ShowInfo();
+        break;
+    }
+  } while( u8g.nextPage() );
+  delay(2000);
+  t = rtc.getTime();
+}
